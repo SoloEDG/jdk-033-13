@@ -49,11 +49,17 @@ export function useRace() {
   }
   function end(result: 'abandoned' | 'finished') {
     if (!active.value) return
-    if (result === 'abandoned') jury.add('abandon', '结束航次', elapsed.value, sail.boat.value.position)
+    if (result === 'abandoned') {
+      jury.abandonActive(elapsed.value)
+      jury.add('abandon', '结束航次', elapsed.value, sail.boat.value.position)
+    }
     logbook.record(live.value, true)
     logbook.archive({
       courseId: course.id, windMode: wind.mode.value, status: result,
       duration: elapsed.value, penalty: jury.penalty.value, events: [...jury.events.value],
+      roundings: jury.archiveEvidence(),
+      ruleSet: jury.strict.value ? 'strict' : 'classic',
+      requiredAngle: jury.requiredAngle.value,
     })
     status.value = result
   }
@@ -61,7 +67,7 @@ export function useRace() {
     const from = sail.boat.value
     const previousEvent = jury.events.value.at(-1)
     const next = sail.step(live.value.wind, stepSize)
-    const verdict = jury.inspect(from.position, next.position, elapsed.value, stepSize)
+    const verdict = jury.inspect(from, next, elapsed.value, stepSize)
     sail.boat.value = verdict.blocked ? { ...next, position: from.position, knots: 0 } : next
     elapsed.value += stepSize
     if (verdict.finish) {

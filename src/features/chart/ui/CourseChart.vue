@@ -1,14 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Anchor, Crosshair, LocateFixed } from 'lucide-vue-next'
-import type { Course, Point, Sample } from '../../../shared/race'
+import type { Course, Point, RoundingAttempt, Sample } from '../../../shared/race'
 import { buoyPosition, gateEnds } from '../lib/geometry'
 import { pathFor, soundings } from '../lib/chartMarks'
+import { sweptWaterPath } from '../../jury/lib/rounding'
 import BoatGlyph from './BoatGlyph.vue'
 
-const props = defineProps<{ course: Course; frame: Sample; trail: Point[]; replay: boolean; focus: Point | null }>()
+const props = defineProps<{ course: Course; frame: Sample; trail: Point[]; replay: boolean; focus: Point | null; evidence?: RoundingAttempt | null }>()
 const route = computed(() => pathFor([props.course.start, ...props.course.gates.flatMap(gate => gate.approach ? [gate.approach.center, gate.center] : [gate.center])]))
 const trailPath = computed(() => pathFor(props.trail))
+const sweepPath = computed(() => props.evidence ? sweptWaterPath(props.evidence.track, props.evidence.hull, 2.1) : '')
+const evidenceTone = computed(() => props.evidence?.status === 'valid' ? '#74e0a4'
+  : props.evidence?.status === 'invalid' ? '#ff765f'
+    : props.evidence?.status === 'unconfirmed' ? '#ffc857'
+      : '#69d7d0')
 </script>
 
 <template>
@@ -32,7 +38,86 @@ const trailPath = computed(() => pathFor(props.trail))
       <text v-for="depth in soundings" :key="depth.join(',')" :x="depth[0]" :y="depth[1]" fill="#a7c2bd" opacity=".55" class="depth">{{ depth[2] }}</text>
       <path :d="route" fill="none" stroke="#d0c89c" stroke-width="1.6" stroke-dasharray="4 7" opacity=".63"/>
       <path :d="trailPath" fill="none" stroke="#e9f6ef" stroke-width="2" stroke-linejoin="round"/>
+      <path
+        v-if="sweepPath"
+        :d="sweepPath"
+        data-testid="swept-water"
+        fill="#67d8d0"
+        fill-opacity=".24"
+        stroke="#b8fff8"
+        stroke-opacity=".58"
+        stroke-width=".8"
+        stroke-linejoin="round"
+      />
+      <g v-if="evidence" data-testid="rounding-evidence" :data-status="evidence.status">
+        <circle
+          :cx="evidence.center.x"
+          :cy="evidence.center.y"
+          :r="evidence.protectionRadius"
+          data-testid="evidence-protection-circle"
+          fill="#ff6f5e"
+          fill-opacity=".13"
+          :stroke="evidenceTone"
+          stroke-width="2.2"
+          stroke-dasharray="6 4"
+        />
+        <circle
+          :cx="evidence.center.x"
+          :cy="evidence.center.y"
+          :r="evidence.protectionRadius + 9"
+          fill="none"
+          :stroke="evidenceTone"
+          stroke-opacity=".42"
+          stroke-width="1.2"
+          stroke-dasharray="2 7"
+        />
+        <text
+          :x="evidence.center.x"
+          :y="evidence.center.y - evidence.protectionRadius - 14"
+          text-anchor="middle"
+          :fill="evidenceTone"
+          class="evidence-text"
+          data-testid="chart-net-angle"
+        >净绕行 {{ Math.round(evidence.netAngle) }}° / {{ evidence.requiredAngle }}°</text>
+        <circle
+          v-for="(contact, index) in evidence.contacts"
+          :key="`contact-${index}`"
+          :cx="contact.position.x"
+          :cy="contact.position.y"
+          r="8"
+          fill="none"
+          stroke="#ff5b45"
+          stroke-width="2.4"
+          data-testid="contact-marker"
+        />
+        <circle
+          v-for="(item, index) in evidence.uncertainties"
+          :key="`uncertain-${index}`"
+          :cx="item.position.x"
+          :cy="item.position.y"
+          r="10"
+          fill="none"
+          stroke="#ffc857"
+          stroke-width="2"
+          stroke-dasharray="3 3"
+          data-testid="uncertain-marker"
+        />
+      </g>
       <g v-for="(gate, index) in course.gates" :key="gate.id" :opacity="index < frame.nextGate ? .42 : 1">
+        <circle
+          v-if="gate.protectionRadius"
+          :cx="buoyPosition(gate).x"
+          :cy="buoyPosition(gate).y"
+          :r="gate.protectionRadius"
+          :data-testid="index === frame.nextGate ? 'protection-circle' : undefined"
+          :data-active="index === frame.nextGate"
+          fill="#ff765f"
+          fill-opacity=".08"
+          stroke="#ff9a83"
+          stroke-opacity=".58"
+          stroke-width="1.2"
+          stroke-dasharray="4 5"
+        />
         <line v-if="gate.approach" :x1="gateEnds(gate.approach)[0].x" :y1="gateEnds(gate.approach)[0].y" :x2="gateEnds(gate.approach)[1].x" :y2="gateEnds(gate.approach)[1].y" :stroke="index === frame.nextGate ? '#ffd455' : '#a6b7a9'" stroke-width="1.4" stroke-dasharray="2 6"/>
         <line :x1="gateEnds(gate)[0].x" :y1="gateEnds(gate)[0].y" :x2="gateEnds(gate)[1].x" :y2="gateEnds(gate)[1].y" :stroke="index === frame.nextGate ? '#ffd455' : '#a6b7a9'" :stroke-width="index === frame.nextGate ? 2.6 : 1.3" stroke-dasharray="6 5"/>
         <circle :cx="buoyPosition(gate).x" :cy="buoyPosition(gate).y" r="9.5" :fill="index === frame.nextGate ? '#ffd455' : '#e77c62'" stroke="#1c3a3c" stroke-width="2.2"/>
